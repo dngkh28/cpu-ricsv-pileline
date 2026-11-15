@@ -39,7 +39,7 @@ always @(posedge reset or posedge clk )begin
 	
 end
 
-assign read_data1 = mem_reg[rs1];
-assign read_data2 = mem_reg[rs2];
+assign read_data1 = (reg_write && rd != 0 && rd == rs1) ? write_data : mem_reg[rs1];
+assign read_data2 = (reg_write && rd != 0 && rd == rs2) ? write_data : mem_reg[rs2];
 
 endmodule
