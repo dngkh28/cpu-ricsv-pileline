@@ -1,5 +1,5 @@
 // Just writing need clock and reading don't need
-//Prepare data before clock 
+//Prepare data before clock
 module reg_file(
 input [4:0]rs1,
 input [4:0]rs2,
