@@ -1,18 +1,18 @@
 module ex_stage(rs1_data,rs2_data,imm_out,pc_out,is_branch,is_jal
 					,is_jalr,alu_control,a_sel,b_sel,BrUn,alu_result,funct3,wb_data
 					,pc_sel,pc_en,store_data,fwd_mem,zero
-					,rs1,rs2,rd_mem,rd_wb,reg_we_mem,reg_we_wb
+					,rs1,rs2,rs1_id,rs2_id,is_load_ex,rd_mem,rd_wb,reg_we_mem,reg_we_wb,rd_ex
 					,ifid_en,ifid_flush,idex_flush);
 					
 input [31:0]rs1_data,rs2_data,imm_out;
 input [31:0]pc_out;
-input 		is_branch,is_jal,is_jalr;
+input 		is_branch,is_jal,is_jalr,is_load_ex;
 input 		BrUn;
 input [3:0]	alu_control;
 input 		a_sel,b_sel;
 input [31:0]wb_data,fwd_mem;
 input [4:0] rs1, rs2,rs1_id,rs2_id;               // số hiệu thanh ghi của lệnh ở EX
-input [4:0] rd_mem, rd_wb;
+input [4:0] rd_mem, rd_wb, rd_ex;
 input       reg_we_mem, reg_we_wb;
 input [2:0]	funct3;
 output [31:0]alu_result;
@@ -61,16 +61,16 @@ forwarding_unit fu(.rs1(rs1),
                    .fwd_a(forward_a), 
 						 .fwd_b(forward_b)
 						 );
-hazard_detector(.rs1_id(rs1_id),
-					 .rs2_id(rs2_id),
-					 .rd_ex(rd_mem), 
-					 .is_load_ex(is_load_ex), 
-					 .pc_sel(pc_sel),
-                .pc_en(pc_en), 
-					 .ifid_en(ifid_en), 
-					 .ifid_flush(ifid_flush), 
-					 .idex_flush(idex_flush)
-					 );
+hazard_detector hd (.rs1_id(rs1_id),
+						  .rs2_id(rs2_id),
+						  .rd_ex(rd_ex), 
+						  .is_load_ex(is_load_ex), 
+						  .pc_sel(pc_sel),
+						  .pc_en(pc_en), 
+						  .ifid_en(ifid_en), 
+						  .ifid_flush(ifid_flush), 
+						  .idex_flush(idex_flush)
+						  );
 alu alua(.a(alu_a),
 			.b(alu_b),
 			.alu_control(alu_control),
