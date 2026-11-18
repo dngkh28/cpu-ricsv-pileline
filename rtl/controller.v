@@ -11,7 +11,7 @@ output reg [1:0]rw_type, //00 : byte, 01 : hw, 10 : w;
 output reg BrUn,
 output reg is_branch,is_jal, is_jalr,
 output reg ld_unsigned//0 : sign extend (LB, LH, LW), 1 : zero extend (LBU, LHU)
-
+output reg is_load;
 );
 localparam I_TYPE = 3'b000;
 localparam S_TYPE = 3'b001;
@@ -20,7 +20,7 @@ localparam J_TYPE = 3'b100;
 localparam U_TYPE = 3'b011;
 always @(*)begin
     imm_sel       = 0;
-    alu_control    = 0;
+    alu_control   = 0;
     reg_we 			= 0;
     b_sel         = 0;
     mem_we        = 0;
@@ -31,6 +31,7 @@ always @(*)begin
 	 is_jal	  		= 0;
 	 is_jalr	  		= 0;
 	 BrUn       	= 0;
+	 is_load 		= 0;
 	 ld_unsigned   = 0;
 	case(instr[6:0])
 		//R-type
@@ -41,6 +42,7 @@ always @(*)begin
 			b_sel  = 0;
 			wb_sel = 2'b01;
 			mem_we =	0;
+			is_load = 0;
 			case(instr[14:12])
 				3'b111 : alu_control = 4'b0000;//AND
 				3'b110 : alu_control = 4'b0001;//ORR
@@ -68,6 +70,7 @@ always @(*)begin
 			a_sel = 0;
 			mem_we = 0;
 			wb_sel = 2'b01;
+			is_load = 0;
 			case(instr[14:12])
 				3'b111 : alu_control = 4'b0000;//AND
 				3'b110 : alu_control = 4'b0001;//ORR
@@ -90,6 +93,7 @@ always @(*)begin
 			b_sel = 1;
 			a_sel = 0;
 			mem_we = 0;
+			is_load = 1;
 			alu_control = 4'b0010;
 			imm_sel = I_TYPE;
 			case(instr[14:12])
@@ -132,6 +136,7 @@ always @(*)begin
 			mem_we = 1;
 			alu_control = 4'b0010;
 			imm_sel = S_TYPE;
+			is_load = 0;
 			case(instr[14:12])
 				3'b000 : begin
 					rw_type = 2'b00;//byte
@@ -150,6 +155,7 @@ always @(*)begin
 		reg_we     = 0;
 		b_sel      = 1;
       a_sel      = 1;
+		is_load 	  = 0;
 		mem_we 	  = 0;
 		alu_control = 4'b0010;
       imm_sel     = B_TYPE;
@@ -191,6 +197,7 @@ always @(*)begin
 			a_sel			= 1;
 			wb_sel		= 2'b10;
 			mem_we		= 0;
+			is_load 		= 0;
 			alu_control 	= 4'b0010;
 			imm_sel     = J_TYPE;
 
@@ -204,6 +211,7 @@ always @(*)begin
 				is_branch  = 0;
 				is_jal	  = 0;
 				is_jalr	  = 1;
+				is_load 	  = 0;
 				wb_sel     = 2'b10; // PC+4
 				mem_we     = 0;
 				alu_control = 4'b0010; // ADD
@@ -217,6 +225,7 @@ always @(*)begin
 			a_sel			= 0;
 			wb_sel		= 2'b01;
 			mem_we		= 0;
+			is_load 		= 0;
 			alu_control 	= 4'b1001;//PASS_B
 			imm_sel     = U_TYPE;
 		end
@@ -227,6 +236,7 @@ always @(*)begin
 			a_sel  = 1;
 			wb_sel = 2'b01;
 			mem_we = 0;
+			is_load = 0;
 			alu_control = 4'b0010;// ADD
 			imm_sel = U_TYPE;
 end
