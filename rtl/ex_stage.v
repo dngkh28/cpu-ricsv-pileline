@@ -44,14 +44,14 @@ mux3 fwdb(.sel(forward_b),
 		.b2(fwd_mem),
 		.result(fwdb_data)
 		);
-mux res_orpc(.sel(a_sel),
-				 .b0(fwda_data),
-				 .b1(pc_out),
-				 .result(alu_a));
-mux res_orimm(.sel(b_sel),
-				 .b0(fwdb_data),
-				 .b1(imm_out),
-				 .result(alu_b));
+mux A(.sel(a_sel),
+		.b0(fwda_data),
+		.b1(pc_out),
+		.result(alu_a));
+mux B(.sel(b_sel),
+		.b0(fwdb_data),
+		.b1(imm_out),
+		.result(alu_b));
 forwarding_unit fu(.rs1(rs1), 
 						 .rs2(rs2),
                    .rd_mem(rd_mem), 
