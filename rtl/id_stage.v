@@ -36,6 +36,7 @@ controller con(.instr(instr),
 					.mem_we(mem_we),//0 : read, 1 : write
 					.wb_sel(wb_sel), //00 : memdata , 01 : aluresult , 10 : PC+4
 					.rw_type(rw_type), //00 : byte, 01 : hw, 10 : w;
+					.is_load(is_load),
 					.BrUn(brUn),
 					.is_branch(is_branch),.is_jal(is_jal), .is_jalr(is_jalr),
 					.ld_unsigned(ld_unsigned)//0 : sign extend (LB, LH, LW), 1 : zero extend (LBU, LHU));
