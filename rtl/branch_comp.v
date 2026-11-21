@@ -1,7 +1,7 @@
 module branch_comp(
     input [31:0] a,
     input [31:0] b,
-    input BrUn,
+    input brUn,
 
     output beq,
     output brlt
@@ -10,7 +10,7 @@ module branch_comp(
 assign beq = (a == b);
 
 assign brlt =
-    BrUn ?
+    brUn ?
     (a < b) :
     ($signed(a) < $signed(b));
 

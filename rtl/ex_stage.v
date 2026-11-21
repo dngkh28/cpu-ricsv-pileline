@@ -1,13 +1,13 @@
-module ex_stage(rs1_data,rs2_data,imm_out,pc_out,is_branch,is_jal
-					,is_jalr,alu_control,a_sel,b_sel,BrUn,alu_result,funct3,wb_data
+module ex_stage(rs1_data,rs2_data,imm_ex,pc_ex,is_branch,is_jal
+					,is_jalr,alu_control,a_sel,b_sel,brUn,alu_result,funct3,wb_data
 					,pc_sel,pc_en,store_data,fwd_mem,zero
 					,rs1,rs2,rs1_id,rs2_id,is_load_ex,rd_mem,rd_wb,reg_we_mem,reg_we_wb,rd_ex
 					,ifid_en,ifid_flush,idex_flush);
 					
-input [31:0]rs1_data,rs2_data,imm_out;
-input [31:0]pc_out;
+input [31:0]rs1_data,rs2_data,imm_ex;
+input [31:0]pc_ex;
 input 		is_branch,is_jal,is_jalr,is_load_ex;
-input 		BrUn;
+input 		brUn;
 input [3:0]	alu_control;
 input 		a_sel,b_sel;
 input [31:0]wb_data,fwd_mem;
@@ -46,11 +46,11 @@ mux3 fwdb(.sel(forward_b),
 		);
 mux A(.sel(a_sel),
 		.b0(fwda_data),
-		.b1(pc_out),
+		.b1(pc_ex),
 		.result(alu_a));
 mux B(.sel(b_sel),
 		.b0(fwdb_data),
-		.b1(imm_out),
+		.b1(imm_ex),
 		.result(alu_b));
 forwarding_unit fu(.rs1(rs1), 
 						 .rs2(rs2),
@@ -79,7 +79,7 @@ alu alua(.a(alu_a),
 );
 branch_comp bc(.a(fwda_data),
    				.b(fwdb_data),
-					.BrUn(BrUn),
+					.brUn(brUn),
 					.beq(beq),
 					.brlt(brlt)
 );

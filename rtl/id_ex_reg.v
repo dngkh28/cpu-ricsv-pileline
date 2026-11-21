@@ -41,7 +41,31 @@ output reg        reg_we_ex, is_load_ex;
 output reg [1:0]  wb_sel_ex;
 
 always @(posedge clk or posedge reset) begin
-    if (reset || flush) begin
+    if (reset) begin
+        rs1_data_ex    <= 32'b0;
+        rs2_data_ex    <= 32'b0;
+        imm_ex         <= 32'b0;
+        pc_ex          <= 32'b0;
+        pc4_ex         <= 32'b0;
+        rs1_ex         <= 5'b0;
+        rs2_ex         <= 5'b0;
+        rd_ex          <= 5'b0;
+        funct3_ex      <= 3'b0;
+        alu_control_ex <= 4'b0;
+        a_sel_ex       <= 1'b0;
+        b_sel_ex       <= 1'b0;
+        brUn_ex        <= 1'b0;
+        is_branch_ex   <= 1'b0;
+        is_jal_ex      <= 1'b0;
+        is_jalr_ex     <= 1'b0;
+        mem_we_ex      <= 1'b0;
+        rw_type_ex     <= 2'b0;
+        ld_unsigned_ex <= 1'b0;
+        reg_we_ex      <= 1'b0;
+        wb_sel_ex      <= 2'b0;
+        is_load_ex     <= 1'b0;
+    end
+    else if (flush) begin
         rs1_data_ex    <= 32'b0;
         rs2_data_ex    <= 32'b0;
         imm_ex         <= 32'b0;

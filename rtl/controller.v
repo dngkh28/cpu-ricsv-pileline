@@ -8,10 +8,10 @@ output reg a_sel,//mux A : 0 : rs1, 1 : PC
 output reg mem_we,//0 : read, 1 : write
 output reg [1:0]wb_sel, //00 : memdata , 01 : aluresult , 10 : PC+4
 output reg [1:0]rw_type, //00 : byte, 01 : hw, 10 : w;
-output reg BrUn,
+output reg brUn,
 output reg is_branch,is_jal, is_jalr,
-output reg ld_unsigned//0 : sign extend (LB, LH, LW), 1 : zero extend (LBU, LHU)
-output reg is_load;
+output reg ld_unsigned,//0 : sign extend (LB, LH, LW), 1 : zero extend (LBU, LHU)
+output reg is_load
 );
 localparam I_TYPE = 3'b000;
 localparam S_TYPE = 3'b001;
@@ -30,7 +30,7 @@ always @(*)begin
 	 is_branch     = 0;
 	 is_jal	  		= 0;
 	 is_jalr	  		= 0;
-	 BrUn       	= 0;
+	 brUn       	= 0;
 	 is_load 		= 0;
 	 ld_unsigned   = 0;
 	case(instr[6:0])
@@ -164,25 +164,25 @@ always @(*)begin
 		is_jalr	  = 0;
       case(instr[14:12])
           3'b000 : begin // BEQ
-              BrUn   = 0;
+              brUn   = 0;
           end
           3'b001 : begin // BNE
-              BrUn   = 0;
+              brUn   = 0;
           end
           3'b100 : begin // BLT (signed)
-              BrUn   = 0;
+              brUn   = 0;
           end
           3'b101 : begin // BGE (signed)
-              BrUn   = 0;
+              brUn   = 0;
           end
           3'b110 : begin // BLTU (unsigned)
-              BrUn   = 1;
+              brUn   = 1;
           end
           3'b111 : begin // BGEU (unsigned)
-              BrUn   = 1;
+              brUn   = 1;
           end
           default : begin
-              BrUn   = 0;
+              brUn   = 0;
 
           end
       endcase

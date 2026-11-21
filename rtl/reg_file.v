@@ -4,7 +4,7 @@ module reg_file(
 input [4:0]rs1,
 input [4:0]rs2,
 input [4:0]rd,
-input reg_write,
+input reg_we,
 input [31:0]write_data,
 input clk,
 input reset,
@@ -32,14 +32,14 @@ always @(posedge reset or posedge clk )begin
 		mem_reg[15] <= 15; mem_reg[31] <= 31; 
 	end
 	else begin
-		if(reg_write == 1 && rd != 5'b00000)begin
+		if(reg_we == 1 && rd != 5'b00000)begin
 			mem_reg[rd] <= write_data;
 		end
 	end
 	
 end
 
-assign read_data1 = (reg_write && rd != 0 && rd == rs1) ? write_data : mem_reg[rs1];
-assign read_data2 = (reg_write && rd != 0 && rd == rs2) ? write_data : mem_reg[rs2];
+assign read_data1 = (reg_we && rd != 0 && rd == rs1) ? write_data : mem_reg[rs1];
+assign read_data2 = (reg_we && rd != 0 && rd == rs2) ? write_data : mem_reg[rs2];
 
 endmodule
