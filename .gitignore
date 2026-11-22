@@ -4,6 +4,12 @@ incremental_db/
 output_files/
 work/
 simulation/
+uvm.odt/
+HUONG_DAN_UVM_ALU.txt/
+_reference/
 Note_cpu_ricsv_pileline.odt
 Pasted image*.png
 .~lock.*
+transcript
+vsim.wlf
+*.vcd
