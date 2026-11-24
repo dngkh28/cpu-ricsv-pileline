@@ -4,6 +4,7 @@ import uvm_pkg::*; // (2) dùng các class của thư viện UVM(gop cac class b
 `include "hazard_item.sv"
 `include "hazard_seq.sv"
 `include "hazard_driver.sv"
+`include "hazard_monitor.sv"
 class hazard_test extends uvm_test;
 	`uvm_component_utils(hazard_test)
 	function new(string name, uvm_component parent);
