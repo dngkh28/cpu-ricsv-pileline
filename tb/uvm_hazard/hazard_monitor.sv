@@ -7,7 +7,7 @@ function new(string name, uvm_component parent);
 endfunction
 function void build_phase (uvm_phase phase);
 	super.build_phase(phase);
-	ap = new("ap".this);
+	ap = new("ap",this);
 	if(!uvm_config_db#(virtual hazard_if)::get(this,"","vif",vif))
 		`uvm_fatal("MON","khong lay duoc vif tu config_db" )
 endfunction
@@ -16,7 +16,7 @@ task run_phase(uvm_phase phase);
 	forever begin
 		@(posedge vif.clk);
 		if (vif.valid === 1'b1) begin
-          it = hazard_item::type_id::create("mon_it");
+          it = hazard_item::type_id::create("mon_it");//tạo một hazard_item mới tên "mon_it" và gán vào biến it
           it.rs1_id     = vif.rs1_id;
           it.rs2_id     = vif.rs2_id;
           it.rd_ex      = vif.rd_ex;
