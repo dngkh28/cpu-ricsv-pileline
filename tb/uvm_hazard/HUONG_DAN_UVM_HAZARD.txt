@@ -1,0 +1,596 @@
+=====================================================================
+HƯỚNG DẪN TỰ VIẾT UVM TESTBENCH CHO hazard_detector (Questa FSE)
+=====================================================================
+Mục tiêu: tự tay viết 11 file .sv trong thư mục này, chạy được, thấy
+scoreboard báo PASS 2000/2000 và bảng coverage, rồi thử phá hazard_detector
+để thấy testbench báo FAIL.
+
+Cách làm giống hệt khối alu (uvm_alu). Nếu quên một khái niệm, xem lại
+HUONG_DAN_UVM_ALU.txt và uvm.odt. Mỗi bước gồm: (1) nó là gì, (2) code để
+gõ vào file, (3) cách kiểm tra.
+
+---------------------------------------------------------------------
+0. CHUẨN BỊ
+---------------------------------------------------------------------
+Thư mục làm việc:
+  /home/thu/altera_lite/25.1std/Work_space/cpu_ricsv_pipeline/tb/uvm_hazard
+
+Các file bạn sẽ tạo (cùng thư mục này, không đặt trong thư mục con):
+  hazard_if.sv  hazard_item.sv  hazard_seq.sv  hazard_driver.sv
+  hazard_monitor.sv  hazard_scoreboard.sv  hazard_agent.sv  hazard_env.sv
+  hazard_test.sv  hazard_pkg.sv  top.sv
+
+DUT là ../../rtl/hazard_detector.v (dùng chung với project, không chép bản sao).
+Script run.sh đã có sẵn, nó biên dịch theo thứ tự:
+  hazard_detector.v, hazard_if.sv, hazard_pkg.sv, top.sv
+rồi chạy mô phỏng. Bạn chạy bằng:
+  ./run.sh
+
+Thư mục _reference/ chứa bản mẫu đã chạy được. ĐỂ NGUYÊN, chỉ mở ra khi
+bị kẹt (để không lộ đáp án). Thư mục này bị .gitignore bỏ qua.
+
+Questa FSE không có rand/constraint/covergroup (thiếu license), nên dùng
+$urandom, $urandom_range và đếm coverage bằng tay, như ở khối alu.
+
+Những gì GIỮ NGUYÊN so với alu:
+  - Khung 11 file, thứ tự include, cách driver/monitor dùng valid.
+  - top.sv, config_db, run_test, các phase.
+Những gì KHÁC:
+  - Nhiều tín hiệu hơn: 5 đầu vào (rs1_id, rs2_id, rd_ex, is_load_ex, pc_sel)
+    và 4 đầu ra (pc_en, ifid_en, ifid_flush, idex_flush).
+  - Sequence phải sinh số CÓ THIÊN LỆCH để hay gặp các trường hợp trùng thanh
+    ghi (nếu chọn hoàn toàn ngẫu nhiên, hai số 5 bit hiếm khi bằng nhau).
+  - Scoreboard so 4 bit đầu ra, mô hình tham chiếu viết theo đặc tả.
+  - Coverage đo các tình huống hazard thay vì đếm mã lệnh.
+
+---------------------------------------------------------------------
+1. HIỂU hazard_detector TRƯỚC KHI KIỂM TRA
+---------------------------------------------------------------------
+hazard_detector là khối TỔ HỢP (không clock, không trạng thái), nằm trong
+ex_stage. Nó xử lý hai loại hazard của pipeline:
+
+  Load-use: lệnh ở EX là lệnh load, mà lệnh ở ID cần chính thanh ghi đó.
+            Kết quả load chưa có (chỉ có sau MEM) nên phải dừng 1 chu kỳ.
+  Nhảy:     lệnh ở EX là nhảy/rẽ nhánh thành công, hai lệnh đã nạp sai phải
+            bỏ đi.
+
+Cổng vào / ra:
+  rs1_id, rs2_id   [4:0]  nguồn của lệnh đang ở ID
+  rd_ex            [4:0]  đích của lệnh đang ở EX
+  is_load_ex              lệnh ở EX là load
+  pc_sel           [1:0]  00 pc+4, 01 nhảy/rẽ nhánh, 10 JALR (11 không dùng)
+  pc_en, ifid_en          0 = giữ PC / giữ IF/ID (stall)
+  ifid_flush              1 = xóa IF/ID
+  idex_flush              1 = chèn bubble vào ID/EX
+
+ĐẶC TẢ (dùng để viết mô hình tham chiếu, KHÔNG nhìn code RTL):
+  hazard = is_load_ex VÀ rd_ex khác x0 VÀ (rd_ex trùng rs1_id HOẶC rs2_id)
+  taken  = pc_sel khác 00
+  pc_en = ifid_en = NOT hazard
+  ifid_flush      = taken
+  idex_flush      = hazard HOẶC taken
+
+Không gian đầu vào: 5+5+5+1+2 = 18 bit, quá lớn để thử hết bằng tay, nên dùng
+test ngẫu nhiên có thiên lệch. Các tình huống PHẢI thử:
+
+  | Tình huống                                   | Mong đợi                      |
+  | load, rd khác 0, trùng rs1 (không trùng rs2) | stall, bubble                 |
+  | load, rd khác 0, trùng rs2 (không trùng rs1) | stall, bubble                 |
+  | load, rd khác 0, trùng cả hai                | stall, bubble                 |
+  | load, rd = x0, có trùng                      | KHÔNG stall                   |
+  | không phải load, có trùng                    | KHÔNG stall                   |
+  | pc_sel = 01 hoặc 10                          | flush IF/ID và ID/EX          |
+  | stall và nhảy cùng lúc (xem lưu ý dưới)      | theo công thức                |
+
+Lưu ý: trong CPU thật, "load ở EX" và "nhảy thành công ở EX" không thể xảy ra
+cùng lúc (một lệnh không vừa là load vừa là nhảy). Nhưng ta kiểm tra khối
+ĐỘC LẬP nên vẫn thử tổ hợp đó: công thức vẫn xác định rõ kết quả.
+
+---------------------------------------------------------------------
+BƯỚC 2: hazard_if.sv  (INTERFACE)
+---------------------------------------------------------------------
+Gom các dây của DUT, thêm clk (testbench cần nhịp) và valid (chỉ dùng cho
+testbench, KHÔNG nối vào DUT).
+
+Code (hazard_if.sv):
+
+  // Interface: gom các dây của hazard_detector. valid chỉ dùng cho testbench.
+  interface hazard_if(input logic clk);
+    logic [4:0] rs1_id, rs2_id, rd_ex;
+    logic       is_load_ex;
+    logic [1:0] pc_sel;
+    logic       pc_en, ifid_en, ifid_flush, idex_flush;
+    logic       valid;
+  endinterface
+
+Kiểm tra: chưa cần chạy.
+
+---------------------------------------------------------------------
+BƯỚC 3: hazard_pkg.sv + top.sv  (KHUNG + LẦN CHẠY ĐẦU TIÊN)
+---------------------------------------------------------------------
+Ban đầu package chỉ có một test tạm để kiểm tra mọi thứ ghép đúng. Các bước
+sau thêm "include" vào package này.
+
+hazard_pkg.sv:
+
+  package hazard_pkg;
+    import uvm_pkg::*;
+    `include "uvm_macros.svh"
+
+    // (các `include sẽ thêm ở đây ở các bước sau)
+
+    class hazard_test extends uvm_test;       // TEST TẠM, bước 10 sẽ thay
+      `uvm_component_utils(hazard_test)
+      function new(string name, uvm_component parent);
+        super.new(name, parent);
+      endfunction
+      task run_phase(uvm_phase phase);
+        `uvm_info("TEST", "khung chay duoc", UVM_NONE)
+      endtask
+    endclass
+  endpackage
+
+top.sv:
+
+  module top;
+    import uvm_pkg::*;
+    import hazard_pkg::*;
+
+    bit clk = 0;
+    always #5 clk = ~clk;
+
+    hazard_if vif(clk);
+
+    hazard_detector dut(.rs1_id(vif.rs1_id), .rs2_id(vif.rs2_id), .rd_ex(vif.rd_ex),
+                        .is_load_ex(vif.is_load_ex), .pc_sel(vif.pc_sel),
+                        .pc_en(vif.pc_en), .ifid_en(vif.ifid_en),
+                        .ifid_flush(vif.ifid_flush), .idex_flush(vif.idex_flush));
+
+    initial begin
+      uvm_config_db#(virtual hazard_if)::set(null, "*", "vif", vif);
+      run_test();
+    end
+  endmodule
+
+Điểm khác với top của alu: tên interface/module và nối 9 cổng của DUT
+(5 vào, 4 ra) vào vif.
+
+Kiểm tra: chạy ./run.sh. Phải thấy dòng
+  UVM_INFO ... [TEST] khung chay duoc
+và  UVM_ERROR : 0, UVM_FATAL : 0.
+
+Hay sai: tên cổng của hazard_detector phải khớp đúng:
+  rs1_id, rs2_id, rd_ex, is_load_ex, pc_sel, pc_en, ifid_en, ifid_flush, idex_flush
+
+---------------------------------------------------------------------
+BƯỚC 4: hazard_item.sv  (TRANSACTION)
+---------------------------------------------------------------------
+Một transaction = một tình huống đầu vào cùng 4 đầu ra thu được.
+
+hazard_item.sv:
+
+  // Transaction: một tình huống đầu vào của hazard_detector và 4 đầu ra thu được.
+  class hazard_item extends uvm_sequence_item;
+    `uvm_object_utils(hazard_item)
+
+    // đầu vào (sequence điền)
+    bit [4:0] rs1_id, rs2_id, rd_ex;
+    bit       is_load_ex;
+    bit [1:0] pc_sel;
+    // đầu ra (monitor điền)
+    bit       pc_en, ifid_en, ifid_flush, idex_flush;
+
+    function new(string name = "hazard_item");
+      super.new(name);
+    endfunction
+
+    function string convert2string();
+      return $sformatf("rs1=%0d rs2=%0d rd_ex=%0d load=%0b pc_sel=%0d -> pc_en=%0b ifid_en=%0b ifid_flush=%0b idex_flush=%0b",
+                       rs1_id, rs2_id, rd_ex, is_load_ex, pc_sel, pc_en, ifid_en, ifid_flush, idex_flush);
+    endfunction
+  endclass
+
+Thêm vào hazard_pkg.sv (sau uvm_macros, trước class hazard_test):
+  `include "hazard_item.sv"
+
+Kiểm tra: ./run.sh vẫn ra "khung chay duoc", 0 lỗi.
+
+---------------------------------------------------------------------
+BƯỚC 5: hazard_seq.sv  (SEQUENCE)
+---------------------------------------------------------------------
+Sinh n tình huống. Hai số 5 bit ngẫu nhiên chỉ trùng nhau 1/32 lần, nên nếu
+chọn hoàn toàn ngẫu nhiên thì rất hiếm khi gặp load-use. Vì vậy ta CHỌN CÓ
+THIÊN LỆCH: 25% rd_ex = 0, 25% rs1_id = rd_ex, 25% rs2_id = rd_ex.
+
+hazard_seq.sv:
+
+  // Sequence: sinh n tình huống. Vì không có rand/constraint nên chọn số có thiên lệch:
+  // - 25% rd_ex = 0 (thanh ghi x0, không gây hazard)
+  // - 25% rs1_id = rd_ex, 25% rs2_id = rd_ex (để hay gặp trường hợp trùng)
+  // - pc_sel chỉ lấy 0, 1, 2 (giá trị 3 không dùng trong thiết kế)
+  class hazard_seq extends uvm_sequence#(hazard_item);
+    `uvm_object_utils(hazard_seq)
+
+    int n = 200;
+
+    function new(string name = "hazard_seq");
+      super.new(name);
+    endfunction
+
+    task body();
+      repeat (n) begin
+        hazard_item it = hazard_item::type_id::create("it");
+        start_item(it);
+        it.rd_ex       = ($urandom_range(3, 0) == 0) ? 5'd0 : $urandom;
+        it.rs1_id      = ($urandom_range(3, 0) == 0) ? it.rd_ex : $urandom;
+        it.rs2_id      = ($urandom_range(3, 0) == 0) ? it.rd_ex : $urandom;
+        it.is_load_ex  = $urandom_range(1, 0);
+        it.pc_sel      = $urandom_range(2, 0);
+        finish_item(it);
+      end
+    endtask
+  endclass
+
+Thêm vào hazard_pkg.sv:  `include "hazard_seq.sv"
+Kiểm tra: ./run.sh vẫn chạy được.
+
+---------------------------------------------------------------------
+BƯỚC 6: hazard_driver.sv  (DRIVER)
+---------------------------------------------------------------------
+Giống driver của alu: mỗi item hai chu kỳ, chu kỳ 1 đặt dữ liệu và valid=1,
+chu kỳ 2 hạ valid=0 rồi item_done. Khác duy nhất: gán 5 tín hiệu đầu vào.
+
+hazard_driver.sv:
+
+  // Driver: đặt đầu vào lên dây. Mỗi item hai chu kỳ: chu kỳ 1 đặt dữ liệu và valid=1,
+  // chu kỳ 2 hạ valid=0 rồi item_done.
+  class hazard_driver extends uvm_driver#(hazard_item);
+    `uvm_component_utils(hazard_driver)
+
+    virtual hazard_if vif;
+
+    function new(string name, uvm_component parent);
+      super.new(name, parent);
+    endfunction
+
+    function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      if (!uvm_config_db#(virtual hazard_if)::get(this, "", "vif", vif))
+        `uvm_fatal("DRV", "khong lay duoc vif tu config_db")
+    endfunction
+
+    task run_phase(uvm_phase phase);
+      vif.valid <= 0;
+      forever begin
+        seq_item_port.get_next_item(req);
+        @(posedge vif.clk);
+        vif.rs1_id     <= req.rs1_id;
+        vif.rs2_id     <= req.rs2_id;
+        vif.rd_ex      <= req.rd_ex;
+        vif.is_load_ex <= req.is_load_ex;
+        vif.pc_sel     <= req.pc_sel;
+        vif.valid      <= 1;
+        @(posedge vif.clk);
+        vif.valid      <= 0;
+        seq_item_port.item_done();
+      end
+    endtask
+  endclass
+
+Thêm vào hazard_pkg.sv:  `include "hazard_driver.sv"
+
+---------------------------------------------------------------------
+BƯỚC 7: hazard_monitor.sv  (MONITOR)
+---------------------------------------------------------------------
+Khi valid=1, thu 5 đầu vào và 4 đầu ra thành một item MỚI, gửi qua ap.write.
+
+hazard_monitor.sv:
+
+  // Monitor: khi valid=1 thu cả đầu vào lẫn 4 đầu ra thành một item mới, gửi cho scoreboard.
+  class hazard_monitor extends uvm_monitor;
+    `uvm_component_utils(hazard_monitor)
+
+    virtual hazard_if vif;
+    uvm_analysis_port#(hazard_item) ap;
+
+    function new(string name, uvm_component parent);
+      super.new(name, parent);
+    endfunction
+
+    function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      ap = new("ap", this);
+      if (!uvm_config_db#(virtual hazard_if)::get(this, "", "vif", vif))
+        `uvm_fatal("MON", "khong lay duoc vif tu config_db")
+    endfunction
+
+    task run_phase(uvm_phase phase);
+      hazard_item it;
+      forever begin
+        @(posedge vif.clk);
+        if (vif.valid === 1'b1) begin
+          it = hazard_item::type_id::create("mon_it");
+          it.rs1_id     = vif.rs1_id;
+          it.rs2_id     = vif.rs2_id;
+          it.rd_ex      = vif.rd_ex;
+          it.is_load_ex = vif.is_load_ex;
+          it.pc_sel     = vif.pc_sel;
+          it.pc_en      = vif.pc_en;
+          it.ifid_en    = vif.ifid_en;
+          it.ifid_flush = vif.ifid_flush;
+          it.idex_flush = vif.idex_flush;
+          ap.write(it);
+        end
+      end
+    endtask
+  endclass
+
+Thêm vào hazard_pkg.sv:  `include "hazard_monitor.sv"
+
+---------------------------------------------------------------------
+BƯỚC 8: hazard_scoreboard.sv  (SCOREBOARD)
+---------------------------------------------------------------------
+Tính 4 đầu ra đúng bằng mô hình viết theo ĐẶC TẢ (mục 1), so với DUT. Mô hình
+KHÔNG được chép từ hazard_detector.v: viết lại từ câu chữ đặc tả, nếu không
+lỗi của RTL sẽ lặp lại trong mô hình và không bị phát hiện.
+
+Coverage đếm bằng tay: các biến đếm int. Mỗi tình huống ở bảng mục 1 có một
+bộ đếm, nhờ đó cuối test bạn biết đã thử đủ chưa.
+
+hazard_scoreboard.sv:
+
+  // Scoreboard: tính 4 đầu ra đúng bằng mô hình tham chiếu viết theo ĐẶC TẢ, so với DUT.
+  // Đặc tả:
+  //   - Load-use: lệnh ở EX là lệnh load, rd khác x0, và rd trùng rs1 hoặc rs2 của lệnh ở ID
+  //     -> giữ PC và IF/ID (pc_en = ifid_en = 0), chèn bubble vào ID/EX (idex_flush = 1)
+  //   - Nhảy: pc_sel khác 00 -> xóa IF/ID (ifid_flush = 1) và ID/EX (idex_flush = 1)
+  // Coverage đếm bằng tay (không dùng covergroup).
+  class hazard_scoreboard extends uvm_scoreboard;
+    `uvm_component_utils(hazard_scoreboard)
+
+    uvm_analysis_imp#(hazard_item, hazard_scoreboard) imp;
+
+    int pass, fail;
+    // coverage
+    int n_stall;            // số lần load-use
+    int n_stall_rs1_only;   // trùng rs1, không trùng rs2
+    int n_stall_rs2_only;   // trùng rs2, không trùng rs1
+    int n_stall_both;       // trùng cả hai
+    int n_rd0_match;        // load, rd = x0, có trùng rs: KHÔNG được stall
+    int n_nonload_match;    // không phải load, có trùng rs: KHÔNG được stall
+    int n_jump;             // số lần nhảy
+    int n_stall_and_jump;   // load-use và nhảy cùng lúc
+    int pc_sel_seen[bit [1:0]];
+
+    function new(string name, uvm_component parent);
+      super.new(name, parent);
+    endfunction
+
+    function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      imp = new("imp", this);
+    endfunction
+
+    function void write(hazard_item t);
+      bit match1, match2, hazard, taken;
+      bit exp_pc_en, exp_ifid_en, exp_ifid_flush, exp_idex_flush;
+
+      match1 = (t.rs1_id == t.rd_ex);
+      match2 = (t.rs2_id == t.rd_ex);
+      hazard = t.is_load_ex && (t.rd_ex != 5'd0) && (match1 || match2);
+      taken  = (t.pc_sel != 2'b00);
+
+      exp_pc_en      = !hazard;
+      exp_ifid_en    = !hazard;
+      exp_ifid_flush = taken;
+      exp_idex_flush = hazard || taken;
+
+      // coverage
+      if (!pc_sel_seen.exists(t.pc_sel)) pc_sel_seen[t.pc_sel] = 0;
+      pc_sel_seen[t.pc_sel]++;
+      if (hazard) begin
+        n_stall++;
+        if (match1 && !match2) n_stall_rs1_only++;
+        if (!match1 && match2) n_stall_rs2_only++;
+        if (match1 && match2)  n_stall_both++;
+      end
+      if (t.is_load_ex && t.rd_ex == 5'd0 && (match1 || match2)) n_rd0_match++;
+      if (!t.is_load_ex && (match1 || match2) && t.rd_ex != 5'd0) n_nonload_match++;
+      if (taken) n_jump++;
+      if (hazard && taken) n_stall_and_jump++;
+
+      // so sánh
+      if (t.pc_en === exp_pc_en && t.ifid_en === exp_ifid_en &&
+          t.ifid_flush === exp_ifid_flush && t.idex_flush === exp_idex_flush) begin
+        pass++;
+      end else begin
+        fail++;
+        `uvm_error("SB", $sformatf("SAI: %s | mong doi pc_en=%0b ifid_en=%0b ifid_flush=%0b idex_flush=%0b",
+                                   t.convert2string(), exp_pc_en, exp_ifid_en, exp_ifid_flush, exp_idex_flush))
+      end
+    endfunction
+
+    function void check_phase(uvm_phase phase);
+      if (pass + fail == 0) `uvm_error("SB", "scoreboard khong nhan duoc giao dich nao")
+    endfunction
+
+    function void report_phase(uvm_phase phase);
+      `uvm_info("SB", $sformatf("pass=%0d fail=%0d", pass, fail), UVM_LOW)
+      `uvm_info("SB", $sformatf("coverage: stall=%0d (rs1 only=%0d, rs2 only=%0d, ca hai=%0d) | rd=x0 co trung=%0d | khong phai load co trung=%0d",
+                n_stall, n_stall_rs1_only, n_stall_rs2_only, n_stall_both, n_rd0_match, n_nonload_match), UVM_LOW)
+      `uvm_info("SB", $sformatf("coverage: nhay=%0d | stall va nhay cung luc=%0d | pc_sel da gap=%0d/3",
+                n_jump, n_stall_and_jump, pc_sel_seen.size()), UVM_LOW)
+      if (fail == 0 && pass > 0) `uvm_info("SB", "*** TEST PASSED ***", UVM_NONE)
+      else                       `uvm_info("SB", "*** TEST FAILED ***", UVM_NONE)
+    endfunction
+  endclass
+
+Thêm vào hazard_pkg.sv:  `include "hazard_scoreboard.sv"
+
+---------------------------------------------------------------------
+BƯỚC 9: hazard_agent.sv và hazard_env.sv  (GHÉP)
+---------------------------------------------------------------------
+hazard_agent.sv:
+
+  // Agent: gộp sequencer, driver, monitor.
+  class hazard_agent extends uvm_agent;
+    `uvm_component_utils(hazard_agent)
+
+    uvm_sequencer#(hazard_item) sqr;
+    hazard_driver  drv;
+    hazard_monitor mon;
+
+    function new(string name, uvm_component parent);
+      super.new(name, parent);
+    endfunction
+
+    function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      sqr = uvm_sequencer#(hazard_item)::type_id::create("sqr", this);
+      drv = hazard_driver::type_id::create("drv", this);
+      mon = hazard_monitor::type_id::create("mon", this);
+    endfunction
+
+    function void connect_phase(uvm_phase phase);
+      drv.seq_item_port.connect(sqr.seq_item_export);
+    endfunction
+  endclass
+
+hazard_env.sv:
+
+  // Env: gộp agent và scoreboard, nối monitor -> scoreboard.
+  class hazard_env extends uvm_env;
+    `uvm_component_utils(hazard_env)
+
+    hazard_agent      agt;
+    hazard_scoreboard sb;
+
+    function new(string name, uvm_component parent);
+      super.new(name, parent);
+    endfunction
+
+    function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      agt = hazard_agent::type_id::create("agt", this);
+      sb  = hazard_scoreboard::type_id::create("sb", this);
+    endfunction
+
+    function void connect_phase(uvm_phase phase);
+      agt.mon.ap.connect(sb.imp);
+    endfunction
+  endclass
+
+Thêm vào hazard_pkg.sv (theo thứ tự, sau scoreboard):
+  `include "hazard_agent.sv"
+  `include "hazard_env.sv"
+
+---------------------------------------------------------------------
+BƯỚC 10: hazard_test.sv  (TEST) - LẦN CHẠY ĐẦY ĐỦ
+---------------------------------------------------------------------
+hazard_test.sv:
+
+  // Test: tạo env, chạy sequence 2000 tình huống.
+  class hazard_test extends uvm_test;
+    `uvm_component_utils(hazard_test)
+
+    hazard_env env;
+
+    function new(string name, uvm_component parent);
+      super.new(name, parent);
+    endfunction
+
+    function void build_phase(uvm_phase phase);
+      super.build_phase(phase);
+      env = hazard_env::type_id::create("env", this);
+    endfunction
+
+    task run_phase(uvm_phase phase);
+      hazard_seq seq = hazard_seq::type_id::create("seq");
+      phase.raise_objection(this);
+      seq.n = 2000;
+      seq.start(env.agt.sqr);
+      repeat (3) @(posedge env.agt.drv.vif.clk);
+      phase.drop_objection(this);
+    endtask
+  endclass
+
+Sửa hazard_pkg.sv: XÓA class hazard_test tạm ở bước 3 và thêm dòng
+  `include "hazard_test.sv"
+sau `include "hazard_env.sv". Package cuối cùng sẽ là:
+
+  package hazard_pkg;
+    import uvm_pkg::*;
+    `include "uvm_macros.svh"
+    `include "hazard_item.sv"
+    `include "hazard_seq.sv"
+    `include "hazard_driver.sv"
+    `include "hazard_monitor.sv"
+    `include "hazard_scoreboard.sv"
+    `include "hazard_agent.sv"
+    `include "hazard_env.sv"
+    `include "hazard_test.sv"
+  endpackage
+
+Chạy: ./run.sh
+
+KẾT QUẢ ĐÚNG (phải có các dòng sau; con số trong coverage thay đổi theo hạt
+giống, không sao):
+  [SB] pass=2000 fail=0
+  [SB] coverage: stall=... (rs1 only=..., rs2 only=..., ca hai=...) | rd=x0 co trung=... | khong phai load co trung=...
+  [SB] coverage: nhay=... | stall va nhay cung luc=... | pc_sel da gap=3/3
+  [SB] *** TEST PASSED ***
+  UVM_ERROR :    0
+  UVM_FATAL :    0
+
+Cách đọc coverage: MỌI con số phải khác 0. Số nào bằng 0 nghĩa là tình huống
+đó chưa từng được thử, kết quả PASS khi đó chưa đủ tin cậy. Bản mẫu cho khoảng:
+  stall khoảng 350 (rs1 only khoảng 150, rs2 only khoảng 150, cả hai khoảng 50)
+  rd=x0 có trùng khoảng 140, không phải load có trùng khoảng 350
+  nhảy khoảng 1300, stall và nhảy cùng lúc khoảng 230, pc_sel đã gặp 3/3
+
+---------------------------------------------------------------------
+BƯỚC 11: THỬ PHÁ hazard_detector ĐỂ XEM SCOREBOARD BẮT LỖI
+---------------------------------------------------------------------
+Một testbench chỉ đáng tin nếu nó báo FAIL khi DUT sai. Làm trên BẢN SAO, đừng
+sửa ../../rtl/hazard_detector.v:
+
+  cp ../../rtl/hazard_detector.v hazard_bug.v
+
+Mỗi lần sửa MỘT chỗ trong hazard_bug.v (khôi phục lại bản gốc trước khi thử
+lỗi kế tiếp), rồi biên dịch với hazard_bug.v thay cho hazard_detector.v:
+
+  Q=/home/thu/altera_lite/25.1std/questa_fse/linux_x86_64
+  export SALT_LICENSE_SERVER=/home/thu/.altera.quartus/questa_lic.dat
+  $Q/vlib work2
+  $Q/vlog -work work2 -sv hazard_bug.v hazard_if.sv hazard_pkg.sv top.sv
+  $Q/vsim -c -work work2 top +UVM_TESTNAME=hazard_test -do "run -all; quit"
+
+Năm lỗi để thử (kết quả mẫu khi chạy bản mẫu, số lần sai có thể lệch chút):
+
+  | Lỗi                                            | Cách sửa trong hazard_bug.v                    | Mong đợi          |
+  | M1 quên loại trừ thanh ghi x0                  | xóa  (rd_ex != 5'b0) &&                         | FAIL, khoảng 137  |
+  | M2 chỉ so sánh với rs1 (lỗi bạn từng gặp)      | xóa  || (rd_ex == rs2_id)                       | FAIL, khoảng 146  |
+  | M3 bubble không tính load-use                  | idex_flush = jump  (bỏ  load_use |)             | FAIL, khoảng 123  |
+  | M4 chỉ coi pc_sel = 01 là nhảy                 | jump = (pc_sel == 2'b01)                       | FAIL, khoảng 634  |
+  | M5 quên kiểm tra is_load_ex                    | xóa  is_load_ex &&                              | FAIL, khoảng 350  |
+
+Dòng "SAI:" trong log cho biết tổ hợp nào làm DUT sai và đầu ra mong đợi. Ví
+dụ M2 cho:
+  rs1=15 rs2=6 rd_ex=6 load=1 pc_sel=0 -> pc_en=1 ...
+  mong doi pc_en=0 ifid_en=0 ifid_flush=0 idex_flush=1
+
+Xong thì xóa hazard_bug.v và work2.
+
+Điều rút ra: nếu coverage của rs2-only bằng 0, lỗi M2 sẽ KHÔNG bị bắt dù test
+báo PASS. Đó là lý do phải đọc bảng coverage, không chỉ nhìn PASS.
+
+---------------------------------------------------------------------
+BƯỚC 12 (TÙY CHỌN): MỞ RỘNG
+---------------------------------------------------------------------
+  - Thử pc_sel = 3 (mã không dùng): RTL coi mọi giá trị khác 00 là nhảy.
+    Đây là quyết định thiết kế, đặc tả chưa quy định, nên hãy hỏi chính mình
+    muốn hành vi nào rồi ghi vào đặc tả, rồi mới thêm vào mô hình.
+  - Viết sequence liệt kê hết rs1, rs2, rd_ex (32 x 32 x 32) với is_load_ex = 1
+    và pc_sel = 0: kiểm tra vét cạn phần load-use (khoảng 32 nghìn item).
+  - Nối hazard_detector với forwarding_unit trong ex_stage và kiểm tra cả khối
+    ex_stage (xem kế hoạch ba cấp trong uvm.odt, mục 8).
