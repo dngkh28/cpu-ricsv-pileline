@@ -3,6 +3,7 @@ package forwarding_pkg;
 	`include "uvm_macros.svh"
 	`include "forwarding_item.sv"
 	`include "forwarding_seq.sv"
+	`include "forwarding_driver.sv"
 	class  forwarding_test extends uvm_test;
 		`uvm_component_utils(forwarding_test);
 		function new(string  name, uvm_component parent);
