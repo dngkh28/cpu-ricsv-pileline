@@ -29,8 +29,8 @@ class forwarding_monitor extends uvm_monitor;
 					it.fwd_b= vif.fwd_b;
 					ap.write(it);
 				end
-			end
-		endtask
+		end
+	endtask
 endclass
 				
 				
