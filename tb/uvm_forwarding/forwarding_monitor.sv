@@ -25,6 +25,8 @@ class forwarding_monitor extends uvm_monitor;
 					it.rs2=vif.rs2;
 					it.rd_mem=vif.rd_mem;
 					it.rd_wb=vif.rd_wb;
+					it.reg_we_wb  = vif.reg_we_wb;
+					it.reg_we_mem = vif.reg_we_mem;
 					it.fwd_a = vif.fwd_a;
 					it.fwd_b= vif.fwd_b;
 					ap.write(it);

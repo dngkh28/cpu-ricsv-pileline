@@ -12,7 +12,7 @@ class forwarding_driver extends uvm_driver#(forwarding_item);
 	 endfunction
 	 
 	 task run_phase(uvm_phase phase);
-		vif.valid =0;
+		vif.valid <=0;
 		forever begin
 			seq_item_port.get_next_item(req);
 			@(posedge vif.clk);
@@ -22,8 +22,9 @@ class forwarding_driver extends uvm_driver#(forwarding_item);
 			vif.rd_wb <=req.rd_wb;
 			vif.reg_we_wb <=req.reg_we_wb;
 			vif.reg_we_mem <=req.reg_we_mem;
+			vif.valid <=1;
 			@(posedge vif.clk);
-			vif.valid =0;
+			vif.valid <=0;
 			seq_item_port.item_done();
 		end
 	 endtask

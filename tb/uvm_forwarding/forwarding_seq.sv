@@ -16,8 +16,7 @@ class forwarding_seq extends uvm_sequence #(forwarding_item);
 		forwarding_item it = forwarding_item::type_id::create("it");
 		start_item(it);
 		it.rd_mem= ($urandom_range(3, 0) == 0) ? 5'd0 : $urandom;
-		it.rd_wb = ($urandom_range(3, 0) == 0) ? 5'd0 : $urandom;
-		
+		it.rd_wb = ($urandom_range(3, 0) == 0) ? it.rd_mem : $urandom;
 
 		// trong body():
 		it.rs1 = pick_src(it.rd_mem, it.rd_wb);
